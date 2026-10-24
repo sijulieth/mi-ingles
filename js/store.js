@@ -2,6 +2,8 @@
 import { db, uid, todayStr } from './db.js';
 import { newCard, overallLevel } from './srs.js';
 
+export const APP_VERSION = '1.2.3';
+
 export const DEFAULT_SETTINGS = {
   geminiKey: '', geminiModel: '',
   elevenKey: '', useEleven: true, elevenVoiceId: '', elevenVoiceIdEs: '', elevenVoiceName: '', elevenAltVoiceId: '',

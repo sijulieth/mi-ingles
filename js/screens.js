@@ -1,5 +1,5 @@
 // Inicio, progreso, expresiones, ajustes y evaluación semanal.
-import { S, register, go, level, weekInfo, totalMinutes, practiceDays, weeklyDue, weeklyCount, lastEval, saveSettings, saveProfile, saveEval, recordErrors, topErrors, deleteCard, deleteError, updateCard, minutesByDay, loadAll, aiReady } from './store.js';
+import { APP_VERSION, S, register, go, level, weekInfo, totalMinutes, practiceDays, weeklyDue, weeklyCount, lastEval, saveSettings, saveProfile, saveEval, recordErrors, topErrors, deleteCard, deleteError, updateCard, minutesByDay, loadAll, aiReady } from './store.js';
 import { mount, esc, toast, icon, navBar, loading, downloadJSON } from './ui.js';
 import { levelName, overallLevel, SKILLS, isMastered, isDue, blendLevels, buildPlan } from './srs.js';
 import { MODES, DIAG_LISTENING } from './curriculum.js';
@@ -243,7 +243,7 @@ register('settings', async () => {
         <p class="small muted">Carga datos de ejemplo (14 días de sesiones) para ver el panel de progreso. No usa la IA. Puedes borrarlos con "Borrar todos mis datos".</p>
         <button class="btn outline block" id="demo">Cargar datos de prueba</button>
       </details>
-      <p class="tiny muted center">Mi Inglés · versión 1.2 · las grabaciones de voz no se guardan</p>
+      <p class="tiny muted center">Mi Inglés · versión ${APP_VERSION} · las grabaciones de voz no se guardan</p>
     </div>
   </main>${navBar('settings')}`);
 

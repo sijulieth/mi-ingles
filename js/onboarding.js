@@ -8,6 +8,7 @@ import { DIAG_LISTENING, DIAG_SPEAKING, INTERESTS, SCENARIOS } from './curriculu
 import { diagnose } from './tutor.js';
 import { buildPlan, levelName, overallLevel, SKILLS } from './srs.js';
 import { uid, todayStr } from './db.js';
+import { APP_VERSION } from './store.js';
 
 const shell = (inner, { back } = {}) => `<main class="screen no-nav">
   ${back ? `<div class="topbar"><button class="icon-btn" id="back" aria-label="Atrás">${icon.back}</button></div>` : ''}
@@ -90,7 +91,8 @@ register('keys', () => {
     </div>
     <div id="msg"></div>
     <div style="flex:1;min-height:20px"></div>
-    <button class="btn primary big block" id="go">Probar y continuar</button>`, { back: true }));
+    <button class="btn primary big block" id="go">Probar y continuar</button>
+    <p class="tiny muted center" style="margin-top:8px">Versión ${APP_VERSION}</p>`, { back: true }));
   bindBack('aboutyou');
   const b = document.getElementById('go');
   b.onclick = async () => {
