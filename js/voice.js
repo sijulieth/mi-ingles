@@ -200,6 +200,7 @@ function pickElevenVoice(s, opts) {
 }
 
 async function playEleven(text, voiceId, speed, key) {
+  key = String(key || '').replace(/[^A-Za-z0-9_\-]/g, ''); voiceId = String(voiceId || '').replace(/[^A-Za-z0-9_\-]/g, '');
   const ck = `${voiceId}|${speed}|${text}`;
   let url = cache.get(ck);
   if (!url) {

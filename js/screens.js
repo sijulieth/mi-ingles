@@ -3,7 +3,7 @@ import { S, register, go, level, weekInfo, totalMinutes, practiceDays, weeklyDue
 import { mount, esc, toast, icon, navBar, loading, downloadJSON } from './ui.js';
 import { levelName, overallLevel, SKILLS, isMastered, isDue, blendLevels, buildPlan } from './srs.js';
 import { MODES, DIAG_LISTENING } from './curriculum.js';
-import { detectModel } from './gemini.js';
+import { detectModel, cleanKey } from './gemini.js';
 import { speak, unlockAudio, getUsage, elevenSubscription, elevenVoices, releaseMic, testElevenVoice } from './voice.js';
 import { elevenPatch } from './onboarding.js';
 import { micHTML, bindMic } from './mic.js';
@@ -253,7 +253,7 @@ register('settings', async () => {
   });
   $('sp').oninput = () => $('spv').textContent = Math.round($('sp').value * 100) + '%';
   $('detect').onclick = async () => {
-    try { $('detect').disabled = true; const { best, all } = await detectModel($('gk').value.trim()); $('gm').value = best; toast(`Modelo: ${best} (${all.length} disponibles)`); }
+    try { $('detect').disabled = true; const { best, all } = await detectModel(cleanKey($('gk').value)); $('gm').value = best; toast(`Modelo: ${best} (${all.length} disponibles)`); }
     catch (e) { toast(e.message, 6000); } finally { $('detect').disabled = false; }
   };
   let voiceList = [];
@@ -280,7 +280,7 @@ register('settings', async () => {
   };
   const collect = () => {
     const patch = {
-      geminiKey: $('gk').value.trim(), geminiModel: $('gm').value.trim(),
+      geminiKey: cleanKey($('gk').value), geminiModel: $('gm').value.trim(),
       elevenKey: $('ek').value.trim(), useEleven: $('ue').checked, autoAccents: $('aa').checked,
       elevenMonthlyCap: Math.max(0, Number($('cap').value) || 0), ttsSpeed: Number($('sp').value),
       showTranscript: $('tx').checked, weeklyTarget: Number($('wt').value), theme: $('theme').value,

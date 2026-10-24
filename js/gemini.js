@@ -7,6 +7,7 @@ export class AIError extends Error {
 
 function friendly(status, body) {
   const msg = (body && body.error && body.error.message) || '';
+  if (/location is not supported/i.test(msg)) return new AIError('Google no ofrece la API de Gemini en tu ubicación actual.', { status });
   if (status === 400 && /api key/i.test(msg)) return new AIError('La clave de Gemini no es válida. Revísala en Ajustes.', { status });
   if (status === 403) return new AIError('La clave de Gemini no tiene permiso. Revisa las restricciones de la clave en Google AI Studio.', { status });
   if (status === 404) return new AIError('El modelo de Gemini configurado ya no existe. Ve a Ajustes y pulsa "Detectar modelo".', { status });
@@ -15,19 +16,27 @@ function friendly(status, body) {
   return new AIError(`Error de Gemini (${status}). ${msg.slice(0, 140)}`, { status });
 }
 
+// Limpia la clave: al copiar en el iPhone se cuelan espacios, saltos o caracteres invisibles.
+export const cleanKey = k => String(k || '').replace(/[^A-Za-z0-9_\-]/g, '');
+
 async function call(path, key, body, { signal, method = 'POST' } = {}) {
+  key = cleanKey(key);
   if (!key) throw new AIError('Falta la clave de Gemini. Agrégala en Ajustes.');
   if (!navigator.onLine) throw new AIError('Sin conexión a internet. Revisa tu conexión e inténtalo de nuevo.', { retryable: true });
+  const opts = { method, signal, body: body ? JSON.stringify(body) : undefined };
   let res;
   try {
-    res = await fetch(`${BASE}/${path}`, {
-      method, signal,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    res = await fetch(`${BASE}/${path}`, { ...opts, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key } });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    throw new AIError('No se pudo conectar con Gemini. Revisa tu conexión.', { retryable: true });
+    // Segundo intento con la clave en la dirección (formato alternativo que admite Google).
+    try {
+      const sep = path.includes('?') ? '&' : '?';
+      res = await fetch(`${BASE}/${path}${sep}key=${encodeURIComponent(key)}`, { ...opts, headers: body ? { 'Content-Type': 'application/json' } : undefined });
+    } catch (e2) {
+      if (e2.name === 'AbortError') throw e2;
+      throw new AIError(`No se pudo conectar con Gemini (${e2.name}: ${e2.message || 'sin detalle'}). Revisa tu internet y desactiva bloqueadores de contenido o VPN si usas alguno.`, { retryable: true });
+    }
   }
   let data = null;
   try { data = await res.json(); } catch {}

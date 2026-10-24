@@ -1,7 +1,7 @@
 // Incorporación: consentimiento, perfil, claves, prueba de micrófono y diagnóstico.
 import { S, register, go, saveSettings, saveProfile, saveEval, recordErrors, addCards } from './store.js';
 import { mount, esc, toast, icon, loading } from './ui.js';
-import { detectModel } from './gemini.js';
+import { detectModel, cleanKey } from './gemini.js';
 import { elevenVoices, mapVoicesByAccent, speak, unlockAudio, releaseMic, testElevenVoice } from './voice.js';
 import { micHTML, bindMic } from './mic.js';
 import { DIAG_LISTENING, DIAG_SPEAKING, INTERESTS, SCENARIOS } from './curriculum.js';
@@ -94,7 +94,7 @@ register('keys', () => {
   bindBack('aboutyou');
   const b = document.getElementById('go');
   b.onclick = async () => {
-    const key = document.getElementById('k').value.trim();
+    const key = cleanKey(document.getElementById('k').value);
     if (!key) { toast('Pega tu clave de Gemini.'); return; }
     b.disabled = true; b.innerHTML = '<span class="spinner"></span> Probando…';
     try {

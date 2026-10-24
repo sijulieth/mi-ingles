@@ -74,7 +74,7 @@ function geminiReply(body) {
     await click('#go');
   });
   await step('Clave de Gemini y detección de modelo', async () => {
-    await page.fill('#k', 'AIzaTEST'); await click('#go');
+    await page.fill('#k', ' AIza\u200bTEST \n'); await click('#go');
     await page.getByText('La voz del tutor').first().waitFor();
   });
   await step('ElevenLabs: cargar voces y elegir', async () => {
