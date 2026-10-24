@@ -1,6 +1,6 @@
 // Service worker: guarda la app para que abra rápido y sin conexión.
 // Cambia VERSION en cada actualización; los datos (IndexedDB) no se tocan.
-const VERSION = 'mi-ingles-v1.2.1';
+const VERSION = 'mi-ingles-v1.2.2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/db.js', 'js/srs.js', 'js/curriculum.js', 'js/gemini.js', 'js/voice.js',

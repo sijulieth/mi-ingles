@@ -8,8 +8,9 @@ export class AIError extends Error {
 function friendly(status, body) {
   const msg = (body && body.error && body.error.message) || '';
   if (/location is not supported/i.test(msg)) return new AIError('Google no ofrece la API de Gemini en tu ubicación actual.', { status });
-  if (status === 400 && /api key/i.test(msg)) return new AIError('La clave de Gemini no es válida. Revísala en Ajustes.', { status });
-  if (status === 403) return new AIError('La clave de Gemini no tiene permiso. Revisa las restricciones de la clave en Google AI Studio.', { status });
+  if (status === 400 && /expired/i.test(msg)) return new AIError('Tu clave de Gemini expiró. Crea una nueva en aistudio.google.com/apikey.', { status });
+  if (status === 400 && /api key/i.test(msg)) return new AIError(`Google dice que la clave no es válida ("${msg.slice(0, 120)}"). Cópiala de nuevo con el botón de copiar de AI Studio.`, { status });
+  if (status === 403) return new AIError(`La clave de Gemini no tiene permiso ("${msg.slice(0, 120)}"). Revisa sus restricciones en Google Cloud.`, { status });
   if (status === 404) return new AIError('El modelo de Gemini configurado ya no existe. Ve a Ajustes y pulsa "Detectar modelo".', { status });
   if (status === 429) return new AIError('Se alcanzó el límite de uso de Gemini por ahora. Espera un minuto e inténtalo de nuevo.', { status, retryable: true });
   if (status >= 500) return new AIError('Gemini tuvo un problema temporal. Inténtalo de nuevo.', { status, retryable: true });
@@ -17,7 +18,7 @@ function friendly(status, body) {
 }
 
 // Limpia la clave: al copiar en el iPhone se cuelan espacios, saltos o caracteres invisibles.
-export const cleanKey = k => String(k || '').replace(/[^A-Za-z0-9_\-]/g, '');
+export const cleanKey = k => String(k || '').replace(/[^A-Za-z0-9_.\-]/g, '');
 
 async function call(path, key, body, { signal, method = 'POST' } = {}) {
   key = cleanKey(key);
