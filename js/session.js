@@ -283,8 +283,10 @@ register('session', ({ mode = 40, resumeId } = {}) => {
     const add = (html) => { chat.insertAdjacentHTML('beforeend', html); chat.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'end' }); };
     const addTutor = t => add(`<div class="msg tutor ${showTx() ? '' : 'blur'}"><div class="who">${esc(persona.name)}</div>${esc(t)}</div>`);
     const addMe = t => add(`<div class="msg me">${esc(t)}</div>`);
-    const addFix = c => add(`<div class="fix"><div class="small muted">Mejor así:</div><div class="wrong">${esc(c.original)}</div><div class="right">${esc(c.natural || c.corrected)}</div>${c.explanation_es ? `<div class="small" style="margin-top:4px">${esc(c.explanation_es)}</div>` : ''}</div>`);
-    const addHelp = t => add(`<div class="help-es">💡 ${esc(t)}</div>`);
+    const esBtn = t => `<button class="btn sm ghost" data-es="${esc(t)}" aria-label="Escuchar en español" style="min-height:32px;padding:2px 8px">🔊 Escuchar</button>`;
+    const addFix = c => add(`<div class="fix"><div class="small muted">Mejor así:</div><div class="wrong">${esc(c.original)}</div><div class="right">${esc(c.natural || c.corrected)}</div>${c.explanation_es ? `<div class="small" style="margin-top:4px">${esc(c.explanation_es)}</div>${esBtn(c.explanation_es)}` : ''}</div>`);
+    const addHelp = t => add(`<div class="help-es">💡 ${esc(t)}${esBtn(t)}</div>`);
+    chat.addEventListener('click', e => { const b = e.target.closest('[data-es]'); if (b) speak(b.dataset.es, { lang: 'es' }); });
 
     // Reconstruye la conversación al reanudar.
     for (const t of sess.transcript) {
@@ -477,13 +479,14 @@ register('session', ({ mode = 40, resumeId } = {}) => {
           <div><div class="tiny muted">Lo que dijiste</div><div><s>${esc(e.original)}</s></div></div>
           <div><div class="tiny muted">Correcto</div><div style="font-weight:600">${esc(e.corrected)}</div></div>
           ${e.natural && e.natural !== e.corrected ? `<div><div class="tiny muted">Más natural</div><div style="font-weight:700;color:var(--primary)">${esc(e.natural)}</div></div>` : ''}
-          ${e.explanation_es ? `<div class="small">${esc(e.explanation_es)}</div>` : ''}
+          ${e.explanation_es ? `<div class="small">${esc(e.explanation_es)} <button class="btn sm ghost" id="playEs" style="min-height:32px;padding:2px 8px">🔊</button></div>` : ''}
           <button class="btn sm outline" id="play" style="align-self:flex-start">${icon.play} Escuchar</button>
         </div>
         <div id="fb" style="margin-top:12px"></div>
         <div style="flex:1"></div>
         ${micHTML('mic', `<button class="btn sm ghost" id="skipE">Siguiente</button>`)}`;
       document.getElementById('play').onclick = () => speak(target);
+      const pe = document.getElementById('playEs'); if (pe) pe.onclick = () => speak(e.explanation_es, { lang: 'es' });
       document.getElementById('skipE').onclick = () => practice(errs, i + 1);
       speak(target);
       const mic = bindMic('mic', {

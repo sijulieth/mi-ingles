@@ -4,7 +4,8 @@ import { mount, esc, toast, icon, navBar, loading, downloadJSON } from './ui.js'
 import { levelName, overallLevel, SKILLS, isMastered, isDue, blendLevels, buildPlan } from './srs.js';
 import { MODES, DIAG_LISTENING } from './curriculum.js';
 import { detectModel } from './gemini.js';
-import { speak, unlockAudio, getUsage, elevenSubscription, elevenVoices, mapVoicesByAccent, releaseMic } from './voice.js';
+import { speak, unlockAudio, getUsage, elevenSubscription, elevenVoices, releaseMic, testElevenVoice } from './voice.js';
+import { elevenPatch } from './onboarding.js';
 import { micHTML, bindMic } from './mic.js';
 import { weeklyTasks, weeklyEval } from './tutor.js';
 import { db, uid, todayStr } from './db.js';
@@ -200,7 +201,12 @@ register('settings', async () => {
         <h3>ElevenLabs (voz del tutor)</h3>
         <label class="toggle"><span>Usar ElevenLabs</span><input type="checkbox" id="ue" ${s.useEleven !== false && s.elevenKey ? 'checked' : ''}></label>
         <label class="field"><span>Clave de API</span><input type="password" id="ek" value="${esc(s.elevenKey)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk_…"></label>
-        <div class="row"><span class="small grow">Voz: <b>${esc(s.elevenVoiceName || 'sin elegir')}</b></span><button class="btn sm outline" id="voices">Cambiar voz</button></div>
+        <label class="field"><span>ID de la voz</span><input type="text" id="evid" value="${esc(s.elevenVoiceId)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ej.: 21m00Tcm4TlvDq8ikWAM"></label>
+        <p class="tiny muted" style="margin:0">En ElevenLabs › Voices, abre la voz, toca ⋯ y elige "Copy voice ID".${s.elevenVoiceName ? ` Voz actual: <b>${esc(s.elevenVoiceName)}</b>.` : ''}</p>
+        <div class="row wrap"><button class="btn sm outline" id="evtest">${icon.play} Probar esta voz</button><button class="btn sm ghost" id="voices">Elegir de mis voces</button></div>
+        <label class="field"><span>ID de la voz en español (explicaciones)</span><input type="text" id="evides" value="${esc(s.elevenVoiceIdEs || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Opcional"></label>
+        <button class="btn sm outline" id="evtestEs" style="align-self:flex-start">${icon.play} Probar voz en español</button>
+        <div id="evmsg"></div>
         <div id="vbox"></div>
         <label class="field"><span>Tope mensual de caracteres (0 = sin tope)</span><input type="number" id="cap" min="0" step="10000" value="${Number(s.elevenMonthlyCap) || 0}"></label>
         <div class="small">Usados este mes desde la app: <b>${(usage.elevenChars || 0).toLocaleString('es')}</b> caracteres${usage.fallbacks ? ` · ${usage.fallbacks} veces con voz del iPhone por error` : ''}</div>
@@ -237,7 +243,7 @@ register('settings', async () => {
         <p class="small muted">Carga datos de ejemplo (14 días de sesiones) para ver el panel de progreso. No usa la IA. Puedes borrarlos con "Borrar todos mis datos".</p>
         <button class="btn outline block" id="demo">Cargar datos de prueba</button>
       </details>
-      <p class="tiny muted center">Mi Inglés · versión 1.0 · las grabaciones de voz no se guardan</p>
+      <p class="tiny muted center">Mi Inglés · versión 1.2 · las grabaciones de voz no se guardan</p>
     </div>
   </main>${navBar('settings')}`);
 
@@ -250,7 +256,17 @@ register('settings', async () => {
     try { $('detect').disabled = true; const { best, all } = await detectModel($('gk').value.trim()); $('gm').value = best; toast(`Modelo: ${best} (${all.length} disponibles)`); }
     catch (e) { toast(e.message, 6000); } finally { $('detect').disabled = false; }
   };
-  let chosenVoice = null, voiceList = [];
+  let voiceList = [];
+  const testV = async (id, text) => {
+    unlockAudio();
+    const key = $('ek').value.trim();
+    if (!key || !id) { toast('Escribe la clave y el ID de la voz.'); return; }
+    $('evmsg').innerHTML = loading('Generando una frase de prueba…');
+    try { await testElevenVoice(key, id, text); $('evmsg').innerHTML = '<div class="small" style="color:var(--good)">✓ La voz funciona. Toca "Guardar ajustes" para usarla.</div>'; }
+    catch (e) { $('evmsg').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+  };
+  $('evtest').onclick = () => testV($('evid').value.trim(), 'Hi there! This is how I sound. Is this speed comfortable for you?');
+  $('evtestEs').onclick = () => testV($('evides').value.trim(), 'Hola, esta es la voz que te explicará las correcciones en español.');
   $('voices').onclick = async () => {
     const key = $('ek').value.trim();
     if (!key) { toast('Pega tu clave de ElevenLabs.'); return; }
@@ -258,8 +274,8 @@ register('settings', async () => {
     try {
       voiceList = await elevenVoices(key);
       $('vbox').innerHTML = `<select id="vsel">${voiceList.map(v => `<option value="${esc(v.id)}" ${v.id === s.elevenVoiceId ? 'selected' : ''}>${esc(v.name)} ${v.accent ? '· ' + esc(v.accent) : ''} ${v.gender ? '· ' + esc(v.gender) : ''}</option>`).join('')}</select>`;
-      $('vsel').onchange = () => { chosenVoice = $('vsel').value; };
-      chosenVoice = $('vsel').value;
+      $('vsel').onchange = () => { $('evid').value = $('vsel').value; };
+      $('evid').value = $('vsel').value;
     } catch (e) { $('vbox').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
   };
   const collect = () => {
@@ -269,12 +285,8 @@ register('settings', async () => {
       elevenMonthlyCap: Math.max(0, Number($('cap').value) || 0), ttsSpeed: Number($('sp').value),
       showTranscript: $('tx').checked, weeklyTarget: Number($('wt').value), theme: $('theme').value,
     };
-    if (chosenVoice) {
-      const v = voiceList.find(x => x.id === chosenVoice);
-      const alt = voiceList.find(x => x.id !== chosenVoice && v && x.gender && x.gender !== v.gender && /american/.test(x.accent)) || voiceList.find(x => x.id !== chosenVoice);
-      Object.assign(patch, { elevenVoiceId: chosenVoice, elevenVoiceName: v ? v.name : '', elevenAltVoiceId: alt ? alt.id : '', elevenVoicesByAccent: mapVoicesByAccent(voiceList) });
-    }
-    return patch;
+    const ep = elevenPatch(patch.elevenKey, $('evid').value.trim(), voiceList);
+    return { ...patch, ...ep, elevenVoiceIdEs: $('evides').value.trim(), useEleven: $('ue').checked && ep.useEleven };
   };
   $('testVoice').onclick = async () => { unlockAudio(); await saveSettings(collect()); speak('Hi there! This is how I sound. Is this speed comfortable for you?'); };
   $('save').onclick = async () => {

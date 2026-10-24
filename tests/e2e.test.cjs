@@ -5,6 +5,7 @@ const assert = require('assert');
 
 const SILENT_WAV = Buffer.from('UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=', 'base64');
 const calls = { gemini: [], eleven: 0 };
+let lastVoiceUrl = '';
 
 function geminiReply(body) {
   const sys = (body.systemInstruction && body.systemInstruction.parts[0].text) || '';
@@ -52,7 +53,7 @@ function geminiReply(body) {
     const url = route.request().url();
     if (url.includes('/voices')) return route.fulfill({ json: { voices: [{ voice_id: 'v1', name: 'Rachel', labels: { accent: 'american', gender: 'female' } }, { voice_id: 'v2', name: 'George', labels: { accent: 'british', gender: 'male' } }, { voice_id: 'v3', name: 'Adam', labels: { accent: 'american', gender: 'male' } }] } });
     if (url.includes('/user/subscription')) return route.fulfill({ json: { character_count: 1200, character_limit: 121000, tier: 'creator' } });
-    calls.eleven++;
+    calls.eleven++; lastVoiceUrl = url;
     assert.equal(route.request().headers()['xi-api-key'], 'sk_TEST');
     route.fulfill({ body: SILENT_WAV, contentType: 'audio/mpeg' });
   });
@@ -77,9 +78,13 @@ function geminiReply(body) {
     await page.getByText('La voz del tutor').first().waitFor();
   });
   await step('ElevenLabs: cargar voces y elegir', async () => {
-    await page.fill('#k', 'sk_TEST'); await click('#load');
-    await page.getByText('Elige la voz principal').first().waitFor();
-    await click('[data-pick="v1"]'); await click('#go');
+    await page.fill('#k', 'sk_TEST'); await page.fill('#vid', 'v1'); await page.fill('#vides', 'es77');
+    await click('#testEs'); await page.getByText('La voz funciona').first().waitFor();
+    assert.ok(lastVoiceUrl.includes('/text-to-speech/es77'));
+    await click('#test'); await page.getByText('La voz funciona').first().waitFor();
+    await click('#load'); await page.getByText('Tus voces').first().waitFor();
+    await click('[data-pick="v1"]'); assert.equal(await page.inputValue('#vid'), 'v1');
+    await click('#go');
   });
   await step('Prueba de micrófono (permiso y grabación)', async () => {
     await page.getByText('Probemos tu micrófono').first().waitFor();
@@ -131,6 +136,8 @@ function geminiReply(body) {
     await page.locator('.msg.me').first().waitFor();
     await page.locator('.fix').first().waitFor();
     assert.ok((await page.textContent('.fix')).includes('went'));
+    await page.locator('.fix [data-es]').first().click(); await page.waitForTimeout(300);
+    assert.ok(lastVoiceUrl.includes('/text-to-speech/es77'), 'la explicación usa la voz en español');
     await page.locator('.msg.tutor').nth(1).waitFor();
   });
   await step('Recuperar sesión tras cerrar la app', async () => {
@@ -217,6 +224,14 @@ function geminiReply(body) {
     const s = data.kv.find(k => k.key === 'settings').value;
     assert.equal(s.geminiKey, ''); assert.equal(s.elevenKey, '');
     assert.ok(data.sessions.length >= 1 && data.cards.length >= 3);
+  });
+  await step('Ajustes: cambiar el ID de voz a mano y probarlo', async () => {
+    await page.fill('#evid', 'custom123'); await click('#evtest');
+    await page.getByText('La voz funciona').first().waitFor();
+    await click('#save'); await page.waitForTimeout(300);
+    const id = await page.evaluate(async () => { const r = indexedDB.open('mi-ingles'); await new Promise(x => r.onsuccess = x); return new Promise(x => { const g = r.result.transaction('kv').objectStore('kv').get('settings'); g.onsuccess = () => x(g.result.value.elevenVoiceId); }); });
+    assert.equal(id, 'custom123');
+    assert.ok(lastVoiceUrl.includes('/text-to-speech/custom123'));
   });
   await step('Respaldo: sin ElevenLabs usa la voz del sistema', async () => {
     const before = calls.eleven;

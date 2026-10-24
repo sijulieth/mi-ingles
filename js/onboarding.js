@@ -2,7 +2,7 @@
 import { S, register, go, saveSettings, saveProfile, saveEval, recordErrors, addCards } from './store.js';
 import { mount, esc, toast, icon, loading } from './ui.js';
 import { detectModel } from './gemini.js';
-import { elevenVoices, mapVoicesByAccent, speak, unlockAudio, releaseMic } from './voice.js';
+import { elevenVoices, mapVoicesByAccent, speak, unlockAudio, releaseMic, testElevenVoice } from './voice.js';
 import { micHTML, bindMic } from './mic.js';
 import { DIAG_LISTENING, DIAG_SPEAKING, INTERESTS, SCENARIOS } from './curriculum.js';
 import { diagnose } from './tutor.js';
@@ -111,17 +111,22 @@ register('keys', () => {
 
 /* 5. ElevenLabs */
 register('eleven', () => {
+  const s = S.settings;
   mount(shell(`
     <h1>La voz del tutor</h1>
     <p class="muted">Con ElevenLabs el tutor suena muy natural. Si prefieres, puedes empezar con la voz del iPhone (gratis) y agregarlo después.</p>
     <div class="card stack">
       <ol class="small" style="padding-left:18px;margin:0">
-        <li>En <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io › API Keys</a> crea una clave.</li>
-        <li>Dale permiso a <b>Text to Speech</b> y <b>Voices (lectura)</b>. Opcional: <b>User (lectura)</b> para ver tus créditos.</li>
-        <li>Recomendado: pon un límite de créditos en la propia clave.</li>
+        <li>En <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">elevenlabs.io › API Keys</a> crea una clave con permiso de <b>Text to Speech</b>. Recomendado: ponle un límite de créditos.</li>
+        <li>En <a href="https://elevenlabs.io/app/voice-library" target="_blank" rel="noopener">Voices</a> abre la voz que te guste, toca <b>⋯</b> y elige <b>Copy voice ID</b>.</li>
       </ol>
-      <label class="field"><span>Clave de ElevenLabs</span><input type="password" id="k" value="${esc(S.settings.elevenKey)}" placeholder="sk_…" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <button class="btn outline block" id="load">Cargar mis voces</button>
+      <label class="field"><span>Clave de API de ElevenLabs</span><input type="password" id="k" value="${esc(s.elevenKey)}" placeholder="sk_…" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="field"><span>ID de la voz</span><input type="text" id="vid" value="${esc(s.elevenVoiceId)}" placeholder="Ej.: 21m00Tcm4TlvDq8ikWAM" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <button class="btn outline block" id="test">${icon.play} Probar esta voz</button>
+      <label class="field"><span>ID de la voz en español (opcional)</span><input type="text" id="vides" value="${esc(s.elevenVoiceIdEs || '')}" placeholder="Para escuchar las explicaciones" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <button class="btn outline block" id="testEs">${icon.play} Probar voz en español</button>
+      <div id="msg"></div>
+      <button class="btn ghost block" id="load">¿No tienes el ID? Elegir de mis voces</button>
     </div>
     <div id="voices" class="stack" style="margin-top:12px"></div>
     <div style="flex:1;min-height:20px"></div>
@@ -129,50 +134,65 @@ register('eleven', () => {
     <button class="btn ghost block" id="skip">Usar la voz del iPhone por ahora</button>`, { back: true }));
   bindBack('keys');
   let voices = [];
-  let chosen = S.settings.elevenVoiceId;
-  const box = document.getElementById('voices');
+  const $ = id => document.getElementById(id);
+  const box = $('voices');
   const render = () => {
-    const en = voices.filter(v => !v.accent || /american|british|australian|english|us|uk/.test(v.accent) || true);
-    box.innerHTML = `<h3>Elige la voz principal del tutor</h3>
-      <div class="card" style="padding:4px 14px">${en.slice(0, 30).map(v => `
+    const chosen = $('vid').value.trim();
+    box.innerHTML = `<h3>Tus voces</h3>
+      <div class="card" style="padding:4px 14px">${voices.slice(0, 40).map(v => `
         <div class="list-item">
           <button class="icon-btn" data-prev="${esc(v.id)}" aria-label="Escuchar ${esc(v.name)}">${icon.play}</button>
           <div class="grow"><div class="t">${esc(v.name)}</div><div class="s">${esc([v.accent, v.gender].filter(Boolean).join(' · ') || v.category || '')}</div></div>
           <button class="chip ${chosen === v.id ? 'on' : ''}" data-pick="${esc(v.id)}">${chosen === v.id ? 'Elegida' : 'Elegir'}</button>
-        </div>`).join('')}</div>
-      <p class="tiny muted">Para los tutores con acento británico o australiano (niveles más altos) la app buscará automáticamente voces con ese acento en tu cuenta.</p>`;
-    box.querySelectorAll('[data-prev]').forEach(b => b.onclick = async () => {
-      const key = document.getElementById('k').value.trim();
-      await saveSettings({ elevenKey: key, elevenVoiceId: b.dataset.prev, useEleven: true });
-      speak('Hi! I’m your English conversation partner. Shall we practise together?');
-    });
-    box.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { chosen = b.dataset.pick; render(); });
+        </div>`).join('')}</div>`;
+    box.querySelectorAll('[data-prev]').forEach(b => b.onclick = () => tryVoice(b.dataset.prev));
+    box.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { $('vid').value = b.dataset.pick; render(); });
   };
-  document.getElementById('load').onclick = async () => {
-    const key = document.getElementById('k').value.trim();
+  const tryVoice = async (id, text = 'Hi! I’m your English conversation partner. Shall we practise together?') => {
+    const key = $('k').value.trim();
+    if (!key || !id) { toast('Escribe la clave y el ID de la voz.'); return false; }
+    $('msg').innerHTML = loading('Generando una frase de prueba…');
+    try {
+      await testElevenVoice(key, id, text);
+      $('msg').innerHTML = '<div class="small" style="color:var(--good)">✓ La voz funciona.</div>';
+      return true;
+    } catch (e) { $('msg').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; return false; }
+  };
+  $('test').onclick = () => tryVoice($('vid').value.trim());
+  $('testEs').onclick = () => tryVoice($('vides').value.trim(), 'Hola, esta es la voz que te explicará las correcciones en español.');
+  $('load').onclick = async () => {
+    const key = $('k').value.trim();
     if (!key) { toast('Pega tu clave de ElevenLabs.'); return; }
     box.innerHTML = loading('Leyendo tus voces…');
     try {
       voices = await elevenVoices(key);
       if (!voices.length) throw new Error('Tu cuenta no tiene voces disponibles.');
-      if (!chosen) chosen = (voices.find(v => v.accent.includes('american') && v.gender === 'female') || voices[0]).id;
+      if (!$('vid').value.trim()) $('vid').value = (voices.find(v => v.accent.includes('american') && v.gender === 'female') || voices[0]).id;
       render();
-    } catch (e) { box.innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+    } catch (e) { box.innerHTML = `<div class="notice err">${esc(e.message)} Puedes escribir el ID de la voz directamente.</div>`; }
   };
-  document.getElementById('go').onclick = async () => {
-    const key = document.getElementById('k').value.trim();
-    if (key && !chosen) { toast('Carga tus voces y elige una, o usa la voz del iPhone.'); return; }
-    const v = voices.find(x => x.id === chosen);
-    const alt = voices.find(x => x.id !== chosen && x.gender && v && x.gender !== v.gender && /american/.test(x.accent)) || voices.find(x => x.id !== chosen);
-    await saveSettings({
-      elevenKey: key, useEleven: !!key, elevenVoiceId: chosen || '', elevenVoiceName: v ? v.name : '',
-      elevenAltVoiceId: alt ? alt.id : '', elevenVoicesByAccent: voices.length ? mapVoicesByAccent(voices) : S.settings.elevenVoicesByAccent,
-    });
+  $('go').onclick = async () => {
+    const key = $('k').value.trim();
+    const vid = $('vid').value.trim();
+    if (key && !vid) { toast('Escribe el ID de la voz, elígela de tu lista o usa la voz del iPhone.'); return; }
+    if (!key && vid) { toast('Falta la clave de API de ElevenLabs.'); return; }
+    await saveSettings({ ...elevenPatch(key, vid, voices), elevenVoiceIdEs: $('vides').value.trim() });
     go('mictest');
   };
-  document.getElementById('skip').onclick = async () => { await saveSettings({ useEleven: false }); go('mictest'); };
-  if (S.settings.elevenKey) document.getElementById('load').click();
+  $('skip').onclick = async () => { await saveSettings({ useEleven: false }); go('mictest'); };
 });
+
+// Ajustes de ElevenLabs a partir de la clave, el ID y (si se cargó) la lista de voces.
+export function elevenPatch(key, vid, voices = []) {
+  const v = voices.find(x => x.id === vid);
+  const alt = voices.find(x => x.id !== vid && x.gender && v && x.gender !== v.gender && /american/.test(x.accent));
+  return {
+    elevenKey: key, useEleven: !!(key && vid), elevenVoiceId: vid,
+    elevenVoiceName: v ? v.name : (vid && vid === S.settings.elevenVoiceId ? S.settings.elevenVoiceName : (vid ? `ID ${vid.slice(0, 6)}…` : '')),
+    elevenAltVoiceId: alt ? alt.id : (voices.length ? '' : S.settings.elevenAltVoiceId),
+    elevenVoicesByAccent: voices.length ? mapVoicesByAccent(voices) : (vid === S.settings.elevenVoiceId ? S.settings.elevenVoicesByAccent : {}),
+  };
+}
 
 /* 6. Prueba de micrófono */
 register('mictest', () => {

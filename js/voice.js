@@ -181,12 +181,13 @@ export async function speak(text, opts = {}) {
       }
     }
   }
-  return speakSystem(text, { speed, accent: opts.accent });
+  return speakSystem(text, { speed, accent: opts.accent, lang: opts.lang });
 }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function pickElevenVoice(s, opts) {
-  if (opts.voice === 'alt' && s.elevenAltVoiceId) return s.elevenAltVoiceId;
+  if (opts.lang === 'es') return s.elevenVoiceIdEs || '';
+  if (opts.voice === 'alt') return s.elevenAltVoiceId || s.elevenVoiceId;
   const map = s.elevenVoicesByAccent || {};
   // La voz elegida por la estudiante manda para el tutor principal (acento americano).
   if (opts.accent && opts.accent !== 'american' && s.autoAccents !== false) {
@@ -215,6 +216,8 @@ async function playEleven(text, voiceId, speed, key) {
       let detail = '';
       try { const j = await res.json(); detail = (j.detail && (j.detail.message || j.detail.status)) || ''; } catch {}
       if (res.status === 401) throw new Error('La clave de ElevenLabs no es válida o no tiene permiso de "Text to Speech".');
+      if (res.status === 404 || /voice_not_found|voice.*not.*found/i.test(detail)) throw new Error('No encontré esa voz. Revisa el ID de la voz (y que esté agregada a "My Voices" en tu cuenta).');
+      if (res.status === 400 && /voice/i.test(detail)) throw new Error('ElevenLabs no acepta ese ID de voz: ' + detail);
       if (res.status === 429 || /quota|credits/i.test(detail)) throw new Error('ElevenLabs: sin créditos o límite alcanzado.');
       throw new Error(`ElevenLabs respondió con un error (${res.status}).`);
     }
@@ -225,6 +228,11 @@ async function playEleven(text, voiceId, speed, key) {
     await addUsage({ elevenChars: text.length });
   }
   return playUrl(url);
+}
+
+export async function testElevenVoice(key, voiceId, text) {
+  const s = cfg();
+  return playEleven(text, voiceId, Math.max(0.7, Math.min(1.2, s.ttsSpeed || 1)), key);
 }
 
 function playUrl(url) {
@@ -253,7 +261,12 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
   loadSysVoices();
   speechSynthesis.onvoiceschanged = loadSysVoices;
 }
-function bestSystemVoice(accent) {
+function bestSystemVoice(accent, language) {
+  if (language === 'es') {
+    const es = sysVoices.filter(v => v.lang && v.lang.startsWith('es'));
+    const pref = l => ({ 'es-CO': 4, 'es-MX': 3, 'es-US': 2, 'es-ES': 1 }[l.replace('_', '-')] || 0) + (/(premium|enhanced|mejorada)/i.test(l) ? 1 : 0);
+    return es.sort((a, b) => pref(b.lang) - pref(a.lang))[0] || null;
+  }
   const lang = { british: 'en-GB', australian: 'en-AU' }[accent] || 'en-US';
   const cand = sysVoices.filter(v => v.lang && v.lang.replace('_', '-').startsWith(lang));
   const pool = cand.length ? cand : sysVoices.filter(v => v.lang && v.lang.startsWith('en'));
@@ -261,14 +274,14 @@ function bestSystemVoice(accent) {
   return pool.sort((a, b) => rank(b) - rank(a))[0] || null;
 }
 
-export function speakSystem(text, { speed = 1, accent } = {}) {
+export function speakSystem(text, { speed = 1, accent, lang: language } = {}) {
   return new Promise(resolve => {
     if (!window.speechSynthesis) { resolve(); return; }
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    const v = bestSystemVoice(accent);
+    const v = bestSystemVoice(accent, language);
     if (v) u.voice = v;
-    u.lang = v ? v.lang : 'en-US';
+    u.lang = v ? v.lang : (language === 'es' ? 'es-CO' : 'en-US');
     u.rate = clamp(speed * 0.95, 0.6, 1.2);
     let done = false;
     const finish = () => { if (done) return; done = true; currentStop = null; resolve(); };
